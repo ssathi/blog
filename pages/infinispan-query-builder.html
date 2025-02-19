@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinispan + RocksDB + Lucene - Query Builder - Part 2</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .tip {
+            background-color: #e8f5e9;
+            padding: 15px;
+            border-left: 4px solid #4caf50;
+            margin: 20px 0;
+        }
+        .warning {
+            background-color: #fff3e0;
+            padding: 15px;
+            border-left: 4px solid #ff9800;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Querying Infinispan with Hibernate Search and Lucene</h1>
+
+    <p>In this second part of our Infinispan integration series, we'll explore how to effectively query data from Infinispan using Hibernate Search and Lucene. We'll cover everything from setting up the search manager to executing complex queries with pagination.</p>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li>Setting Up the Search Manager</li>
+        <li>Building Queries with Hibernate Search</li>
+        <li>Executing Complex Queries</li>
+        <li>Pagination and Sorting</li>
+        <li>Best Practices</li>
+    </ol>
+
+    <h2>1. Setting Up the Search Manager</h2>
+    <p>The first step in querying Infinispan is to create a SearchManager instance. This manager will be your primary interface for building and executing queries:</p>
+
+    <pre><code>// Initialize the search manager
+SearchManager searchManager = Search.getSearchManager(cache);
+searchManager.getStatistics().setStatisticsEnabled(true);</code></pre>
+
+    <div class="tip">
+        <strong>Tip:</strong> Enabling statistics can help monitor query performance and optimize your application, but may have a small performance impact in production.
+    </div>
+
+    <h2>2. Building Queries with Hibernate Search</h2>
+    <p>Hibernate Search provides a fluent API for building Lucene queries. Here's how to create a QueryBuilder for your entity class:</p>
+
+    <pre><code>// Create a query builder for your class
+QueryBuilder builder = searchManager.buildQueryBuilderForClass(YourClass.class).get();</code></pre>
+
+    <h3>2.1 Building Boolean Queries</h3>
+    <p>For complex queries involving multiple conditions, use BooleanJunction:</p>
+
+    <pre><code>// Create a boolean query builder
+BooleanJunction&lt;BooleanJunction&gt; andQueryBuilder = builder.bool();
+
+// Add conditions using should() for OR operations
+andQueryBuilder.should(builder.keyword()
+    .onField("fieldName")
+    .matching(searchValue)
+    .createQuery());</code></pre>
+
+    <h3>2.2 Creating the Final Query</h3>
+    <p>You can either create a specific query with conditions or query all records:</p>
+
+    <pre><code>// Create query with conditions
+Query query = andQueryBuilder.createQuery();
+
+// OR query all records
+Query query = builder.all().createQuery();</code></pre>
+
+    <h2>3. Executing Complex Queries</h2>
+    <p>Once you have built your query, you can execute it using the CacheQuery interface:</p>
+
+    <pre><code>// Create a cache query with type safety
+CacheQuery&lt;ResultType&gt; cacheQuery = searchManager.getQuery(query, IndexedQueryMode.FETCH, ResultType.class);</code></pre>
+
+    <div class="warning">
+        <strong>Note:</strong> The IndexedQueryMode.FETCH parameter tells Infinispan to fetch the complete objects. Use SKIP_LOADING if you only need the indexed fields.
+    </div>
+
+    <h2>4. Pagination and Sorting</h2>
+    <p>For large result sets, you'll want to implement pagination and sorting:</p>
+
+    <pre><code>// Create sort fields
+Sort sort = new Sort(new SortField("fieldName", SortField.Type.STRING));
+
+// Apply sorting and pagination
+CacheQuery&lt;ResultType&gt; sortedQuery = cacheQuery
+    .sort(sort)
+    .firstResult(page * pageSize)
+    .maxResults(pageSize);
+
+// Execute the query and get results
+List&lt;ResultType&gt; results = sortedQuery.list();</code></pre>
+
+    <h2>5. Best Practices</h2>
+    <ul>
+        <li><strong>Query Optimization</strong>
+            <ul>
+                <li>Use appropriate field indexing strategies</li>
+                <li>Leverage keyword queries for exact matches</li>
+                <li>Use fuzzy queries for approximate matches</li>
+            </ul>
+        </li>
+        <li><strong>Performance Considerations</strong>
+            <ul>
+                <li>Always use pagination for large result sets</li>
+                <li>Monitor query execution times using statistics</li>
+                <li>Consider index optimization for frequently queried fields</li>
+            </ul>
+        </li>
+        <li><strong>Error Handling</strong>
+            <ul>
+                <li>Implement proper exception handling for search operations</li>
+                <li>Handle null results and empty result sets gracefully</li>
+                <li>Consider implementing retry mechanisms for temporary failures</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h2>Complete Example</h2>
+    <p>Here's a complete example putting all the pieces together:</p>
+
+    <pre><code>public List&lt;ResultType&gt; searchWithPagination(String searchTerm, int page, int size) {
+    SearchManager searchManager = Search.getSearchManager(cache);
+
+    // Create query builder
+    QueryBuilder builder = searchManager.buildQueryBuilderForClass(ResultType.class).get();
+
+    // Build the query
+    BooleanJunction&lt;BooleanJunction&gt; junction = builder.bool();
+    junction.should(builder.keyword()
+        .onField("searchableField")
+        .matching(searchTerm)
+        .createQuery());
+
+    Query query = junction.createQuery();
+
+    // Execute with pagination
+    CacheQuery&lt;ResultType&gt; cacheQuery = searchManager.getQuery(query, IndexedQueryMode.FETCH, ResultType.class);
+    CacheQuery&lt;ResultType&gt; sortedQuery = cacheQuery
+        .sort(new Sort(new SortField("sortField", SortField.Type.STRING)))
+        .firstResult(page * size)
+        .maxResults(size);
+
+    return sortedQuery.list();
+}</code></pre>
+
+    <h2>Conclusion</h2>
+    <p>Hibernate Search and Lucene provide a powerful querying mechanism for Infinispan caches. By following these patterns and best practices, you can implement efficient and flexible search capabilities in your applications.</p>
+
+    <div class="tip">
+        <strong>Advanced Topics:</strong> For more complex use cases, consider exploring:
+        <ul>
+            <li>Faceted search capabilities</li>
+            <li>Full-text search with analyzers</li>
+            <li>Custom field bridges</li>
+            <li>Mass indexing for large datasets</li>
+        </ul>
+    </div>
+</body>
+</html>

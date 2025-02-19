@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migrating from Infinispan to MongoDB: A Transparent Evolution</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .architecture-diagram {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .callout {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-left: 4px solid #4a86e8;
+            margin: 20px 0;
+        }
+        .problem-callout {
+            background-color: #fff1f0;
+            padding: 15px;
+            border-left: 4px solid #e74c3c;
+            margin: 20px 0;
+        }
+        .solution-callout {
+            background-color: #f1faf1;
+            padding: 15px;
+            border-left: 4px solid #27ae60;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>Migrating from Infinispan to MongoDB: A Transparent Evolution</h1>
+
+    <p>In enterprise applications, infrastructure modernization often becomes necessary as systems grow and encounter scaling challenges. However, rewriting application code during such migrations can introduce risks and delays. This article describes how we successfully migrated from an Infinispan+RocksDB+Lucene stack to MongoDB Atlas while preserving our application's interface contracts.</p>
+
+    <h2>The Legacy Architecture: Infinispan + RocksDB + Lucene</h2>
+
+    <p>Our original architecture consisted of three main components:</p>
+
+    <ul>
+        <li><strong>Infinispan</strong>: An in-memory data grid providing caching capabilities</li>
+        <li><strong>RocksDB</strong>: A persistent key-value store acting as Infinispan's backing storage</li>
+        <li><strong>Lucene</strong>: A search engine library for indexing and querying data</li>
+    </ul>
+
+    <p>This architecture had served us well initially, offering both in-memory performance and persistence. Our application code interacted with these components primarily through two abstractions:</p>
+
+    <ol>
+        <li>The <code>org.infinispan.Cache</code> interface for CRUD operations</li>
+        <li>Hibernate Search QueryBuilder for search operations</li>
+    </ol>
+
+    <div class="problem-callout">
+        <h3>The Growing Challenges</h3>
+        <p>As our system scaled, several issues emerged:</p>
+        <ul>
+            <li><strong>Transaction Fragility</strong>: Transactions weren't properly coordinated between the storage layer (RocksDB) and the indexing layer (Lucene)</li>
+            <li><strong>Memory Pressure</strong>: Infinispan's in-memory design consumed significant JVM heap space</li>
+            <li><strong>Resource Contention</strong>: RocksDB operations ran in the same JVM, competing for CPU and memory resources</li>
+            <li><strong>Operational Complexity</strong>: Manual management of storage and compute resources became increasingly difficult</li>
+            <li><strong>Cluster Stability</strong>: The open-source version of Infinispan's clustering capabilities proved unreliable at scale</li>
+        </ul>
+    </div>
+
+    <h2>Why MongoDB Atlas?</h2>
+
+    <p>MongoDB Atlas offered several advantages that addressed our pain points:</p>
+
+    <ul>
+        <li><strong>Managed Service</strong>: Infrastructure management handled by the provider</li>
+        <li><strong>Separation of Concerns</strong>: Database operations run outside application JVM</li>
+        <li><strong>Scalability</strong>: Horizontal scaling capabilities without application changes</li>
+        <li><strong>ACID Transactions</strong>: Document-level atomic operations with transaction support</li>
+        <li><strong>Query Capabilities</strong>: Rich query language that could replace our Lucene queries</li>
+    </ul>
+
+    <div class="solution-callout">
+        <h3>The Migration Strategy</h3>
+        <p>Our key insight was to implement the <code>org.infinispan.Cache</code> interface on top of MongoDB. This approach allowed us to:</p>
+        <ul>
+            <li>Change the underlying infrastructure</li>
+            <li>Preserve all application code</li>
+            <li>Avoid modifying business logic</li>
+            <li>Focus testing on the adapter layer</li>
+        </ul>
+    </div>
+
+    <h2>Implementation: The MongoDB Cache Adapter</h2>
+
+    <p>Here's how we implemented the Infinispan Cache interface using MongoDB:</p>
+
+    <pre><code>public class MongoCache&lt;K, V extends ResourceEntity&gt; implements Cache&lt;K, V&gt; {
+
+    private final MongoCollection&lt;V&gt; db;
+    private final Map&lt;Object, Tuple2&lt;CacheEventFilter, Set&lt;Class&lt;? extends Annotation&gt;&gt;&gt;&gt; listeners = new ConcurrentHashMap&lt;&gt;();
+
+    public MongoCache(MongoCollection&lt;V&gt; db) {
+        this.db = db;
+    }
+
+    @Override
+    public int size() {
+        return (int) db.countDocuments();
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return db.countDocuments() == 0;
+    }
+
+    @Override
+    public boolean containsKey(Object key) {
+        return db.countDocuments(Filters.eq("id", key)) != 0;
+    }
+
+    @Override
+    public V get(Object key) {
+        try(MongoCursor&lt;V&gt; it = db.find(Filters.eq("id", key)).iterator()) {
+            if (it.hasNext()) {
+                return it.next();
+            } else {
+                return null;
+            }
+        }
+    }
+
+    @Override
+    public V putIfAbsent(K key, V value) {
+        value.setMongoId(null);
+
+        long count = db.countDocuments(Filters.eq("id", key));
+        if (count == 1) {
+            return value;
+        } else if (count == 0) {
+            db.insertOne(value);
+        } else {
+            throw new ServiceException(SC_MORE_THAN_ONE_RECORD_FOUND);
+        }
+        return value;
+    }
+
+    @Override
+    public V put(K key, V value) {
+        value.setMongoId(null);
+
+        long count = db.countDocuments(Filters.eq("id", key));
+        if (count == 1) {
+            db.replaceOne(Filters.eq("id", key), value);
+        } else if (count == 0) {
+            db.insertOne(value);
+        } else {
+            throw new ServiceException(SC_MORE_THAN_ONE_RECORD_FOUND);
+        }
+        return value;
+    }
+
+    @Override
+    public V remove(Object o) {
+        try(MongoCursor&lt;V&gt; it = db.find(Filters.eq("id", o)).iterator()) {
+            if (it.hasNext()) {
+                V val = it.next();
+                db.deleteOne(Filters.eq("id", o));
+                return val;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    // Listener management methods
+    @Override
+    public void removeListener(Object listener) {
+        try {
+            listeners.remove(listener);
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void addListener(Object listener) {
+        listeners.put(listener, null);
+    }
+}</code></pre>
+
+    <h3>Key Implementation Considerations</h3>
+
+    <p>Our adapter implementation addressed several important aspects:</p>
+
+    <ol>
+        <li><strong>Document Mapping</strong>: We mapped cache keys to MongoDB document IDs</li>
+        <li><strong>CRUD Operations</strong>: Translating cache operations to equivalent MongoDB operations</li>
+        <li><strong>Consistency</strong>: Ensuring atomicity for operations like putIfAbsent</li>
+        <li><strong>Error Handling</strong>: Translating MongoDB exceptions to semantically equivalent cache exceptions</li>
+        <li><strong>Event Listeners</strong>: Maintaining a simplified event model for backward compatibility</li>
+    </ol>
+
+    <h2>Replacing Lucene with MongoDB Queries</h2>
+
+    <p>We also needed to replace our Lucene-based search functionality. MongoDB's query capabilities proved suitable:</p>
+
+    <pre><code>// Replacing Lucene queries with MongoDB queries
+List&lt;Bson&gt; andFilters = new ArrayList&lt;&gt;();
+andFilters.add(Filters.eq(name, value));
+
+Bson query = Filters.and(andFilters);
+
+MongoCollection&lt;E&gt; db = null; // inject instance
+db.countDocuments(query)
+</code></pre>
+
+    <p>We created adapter classes that accepted the same query parameters but constructed MongoDB queries instead of Lucene queries. This approach maintained the query interface while changing the implementation details.</p>
+
+    <h2>MongoDB Configuration</h2>
+
+    <p>Proper MongoDB configuration was crucial for success. Here's our configuration approach:</p>
+
+    <pre><code>@Bean
+public MongoDatabase mongoDatabase(MongoClient mongoClient,
+                               Config config) throws ClassNotFoundException {
+
+    List&lt;Convention&gt; DEFAULT_PLUS_NULL_EMPTY = unmodifiableList(asList(
+            CLASS_AND_PROPERTY_CONVENTION,
+            ANNOTATION_CONVENTION,
+            OBJECT_ID_GENERATORS,
+            new IgnoreNullEmptyConvention()
+    ));
+
+    PojoCodecProvider.Builder codecBuilder = PojoCodecProvider.builder().automatic(true);
+
+    List&lt;String&gt; configClasses = config.getConfigList("repo.cache").stream()
+            .map(val -> val.getString("valueClass"))
+            .collect(Collectors.toList());
+    configClasses.add("life.arogya.core.domain.fhir.type.CodeableConcept");
+    configClasses.add("life.arogya.core.domain.fhir.type.Extension");
+
+    for (String clazz : configClasses) {
+        Class&lt;?&gt; entity = Class.forName(clazz);
+        ClassModelBuilder modelBuilder = ClassModel.builder(entity);
+
+        Arrays.stream(entity.getDeclaredMethods())
+                .filter(m -> m.isAnnotationPresent(JsonIgnore.class))
+                .forEach(method -> modelBuilder.removeProperty(attributeName(method)));
+
+        Arrays.stream(entity.getDeclaredFields())
+                .filter(field -> field.isAnnotationPresent(JsonIgnore.class) && !field.getName().equals("mongoId"))
+                .forEach(field -> modelBuilder.removeProperty(field.getName()));
+
+        codecBuilder.register(modelBuilder.conventions(DEFAULT_PLUS_NULL_EMPTY).build());
+    }
+    codecBuilder.register(new GenericTypeCodecProvider());
+
+    CodecProvider pojoCodecProvider = codecBuilder.conventions(DEFAULT_PLUS_NULL_EMPTY).build();
+    CodecRegistry pojoCodecRegistry = fromRegistries(getDefaultCodecRegistry(), fromProviders(pojoCodecProvider));
+
+    CodecRegistry codecRegistry = CodecRegistries.fromRegistries(
+            fromCodecs(new ResourceListCodec(pojoCodecRegistry)),
+            pojoCodecRegistry
+    );
+
+    String database = config.getString("mongodb.name");
+    return mongoClient.getDatabase(database).withCodecRegistry(codecRegistry);
+}</code></pre>
+
+    <h3>Key Configuration Elements</h3>
+
+    <ul>
+        <li><strong>POJO Codec Configuration</strong>: Enabling automatic mapping between Java objects and MongoDB documents</li>
+        <li><strong>Custom Conventions</strong>: Handling null/empty values appropriately</li>
+        <li><strong>Field Exclusion</strong>: Respecting JsonIgnore annotations for proper serialization</li>
+        <li><strong>Custom Codec Registration</strong>: Supporting specialized types in our domain model</li>
+    </ul>
+
+    <h2>Benefits Realized</h2>
+
+    <table>
+        <tr>
+            <th>Challenge</th>
+            <th>Infinispan Solution</th>
+            <th>MongoDB Solution</th>
+        </tr>
+        <tr>
+            <td>Transaction Integrity</td>
+            <td>Manual coordination between RocksDB and Lucene</td>
+            <td>Document-level ACID operations</td>
+        </tr>
+        <tr>
+            <td>Memory Management</td>
+            <td>Large JVM heap requirements</td>
+            <td>Separate database process</td>
+        </tr>
+        <tr>
+            <td>Resource Contention</td>
+            <td>Shared JVM resources</td>
+            <td>Separate compute resources</td>
+        </tr>
+        <tr>
+            <td>Scalability</td>
+            <td>Manual cluster management</td>
+            <td>Automatic scaling with Atlas</td>
+        </tr>
+        <tr>
+            <td>Operational Overhead</td>
+            <td>Self-managed storage and indexing</td>
+            <td>Fully managed service</td>
+        </tr>
+    </table>
+
+    <div class="callout">
+        <h3>Key Insight: Interface Preservation</h3>
+        <p>By preserving the <code>Cache</code> interface, we achieved a significant infrastructure migration with:</p>
+        <ul>
+            <li>Zero changes to application business logic</li>
+            <li>Minimal regression risk</li>
+            <li>Phased migration capability</li>
+            <li>Lower testing burden</li>
+        </ul>
+        <p>This approach demonstrates the power of programming to interfaces rather than implementations.</p>
+    </div>
+
+    <h2>Lessons Learned</h2>
+
+    <ol>
+        <li><strong>Abstraction Boundaries Matter</strong>: Well-defined interfaces enabled infrastructure changes without application rewrites</li>
+        <li><strong>Testing Strategy</strong>: We could focus testing on the adapter layer rather than retesting all application logic</li>
+        <li><strong>Performance Characteristics</strong>: While the interface remained the same, performance characteristics changed (network calls vs. in-memory), requiring careful monitoring</li>
+        <li><strong>Documentation</strong>: Clear documentation of the original interfaces made reimplementation significantly easier</li>
+        <li><strong>Migration Path</strong>: We could migrate collections incrementally rather than requiring a "big bang" approach</li>
+    </ol>
+
+    <h2>Conclusion</h2>
+
+    <p>Our migration from Infinispan+RocksDB+Lucene to MongoDB Atlas demonstrates how strategic use of interfaces and adapters can facilitate major infrastructure changes while preserving application integrity. By implementing the <code>org.infinispan.Cache</code> interface on top of MongoDB, we achieved a more scalable, manageable system without modifying our core application code.</p>
+
+    <p>This approach underscores a fundamental principle of software engineering: programming to interfaces creates flexibility that can pay dividends when infrastructure needs evolve. The separation of interface from implementation provided us with the freedom to make substantial backend changes while maintaining application stability.</p>
+
+    <p>For teams considering similar migrations, we recommend:</p>
+
+    <ul>
+        <li>Identifying the key interfaces your application depends on</li>
+        <li>Creating targeted adapters that maintain those interfaces</li>
+        <li>Testing adapter implementations thoroughly</li>
+        <li>Planning for incremental migration rather than all-at-once changes</li>
+    </ul>
+
+    <p>With careful planning and a focus on interface preservation, even significant infrastructure migrations can be achieved with minimal disruption to application code.</p>
+</body>
+</html>

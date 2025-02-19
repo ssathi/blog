@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrating Infinispan with RocksDB and Lucene: A Complete Guide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .note {
+            background-color: #e1f5fe;
+            padding: 15px;
+            border-left: 4px solid #03a9f4;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Integrating Infinispan with RocksDB and Lucene: A Complete Guide</h1>
+
+    <p>In this comprehensive guide, we'll explore how to integrate Infinispan with RocksDB for persistent storage and Lucene for powerful indexing capabilities. This combination provides a robust caching solution with excellent performance characteristics and search capabilities.</p>
+
+    <h2>Table of Contents</h2>
+    <ol>
+        <li>Understanding the Components</li>
+        <li>Implementing Custom RocksDB Store</li>
+        <li>Configuring RocksDB Store</li>
+        <li>Setting Up Infinispan Cache Manager</li>
+        <li>Lucene Integration</li>
+        <li>Memory and Transaction Configuration</li>
+    </ol>
+
+    <h2>1. Understanding the Components</h2>
+    <p>The integration consists of three main components:</p>
+    <ul>
+        <li>
+            <strong>Infinispan:</strong> A distributed in-memory data grid platform
+            <ul>
+                <li><strong>Description:</strong> Infinispan is a distributed in-memory data grid and cache designed for high-performance, scalable data storage. It provides features such as data replication, partitioning, and transactional capabilities.</li>
+                <li><strong>Key Features:</strong>
+                    <ul>
+                        <li>Supports distributed, embedded, and standalone modes</li>
+                        <li>High availability with data replication and failover</li>
+                        <li>Supports persistence with JDBC, RocksDB, and other backends</li>
+                        <li>Offers APIs for Java, REST, Hot Rod, and Memcached</li>
+                        <li>Integration with Kubernetes for cloud-native deployments</li>
+                        <li>Strong consistency guarantees with transactional support</li>
+                    </ul>
+                </li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Caching layer for high-speed access to frequently used data</li>
+                        <li>Session storage for web applications</li>
+                        <li>Distributed event processing and streaming</li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li>
+            <strong>RocksDB:</strong> A high-performance embedded database for key-value data
+            <ul>
+                <li><strong>Description:</strong> RocksDB is a high-performance, embedded key-value store optimized for fast read and write operations, particularly on SSDs. It is based on LevelDB but enhances performance through advanced optimizations.</li>
+                <li><strong>Key Features:</strong>
+                    <ul>
+                        <li>Log-structured merge (LSM) tree-based storage engine</li>
+                        <li>Efficient use of storage with compression techniques</li>
+                        <li>Supports transactions and snapshot isolation</li>
+                        <li>Optimized for low-latency, high-throughput workloads</li>
+                        <li>Configurable tuning for different performance requirements</li>
+                    </ul>
+                </li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Embedded storage for applications requiring fast persistence</li>
+                        <li>Storage engine for databases like MyRocks (MySQL)</li>
+                        <li>Key-value storage for real-time analytics and logging systems</li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li>
+            <strong>Lucene:</strong> A powerful full-text search engine library
+            <ul>
+                <li><strong>Description:</strong> Apache Lucene is a high-performance, full-text search library that provides powerful indexing and querying capabilities. It is the backbone of search engines like Elasticsearch and Solr.</li>
+                <li><strong>Key Features:</strong>
+                    <ul>
+                        <li>Advanced full-text search with tokenization and stemming</li>
+                        <li>Efficient inverted index for fast lookups</li>
+                        <li>Ranked search results using TF-IDF and BM25 algorithms</li>
+                        <li>Support for phrase queries, wildcards, and fuzzy searches</li>
+                        <li>Scalable and optimized for large-scale indexing</li>
+                    </ul>
+                </li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Powering search engines for websites and applications</li>
+                        <li>Indexing and searching log files in large systems</li>
+                        <li>Implementing recommendation and discovery features</li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+    </ul>
+
+
+    <h2>2. Implementing Custom RocksDB Store</h2>
+    <p>First, let's look at implementing a custom store for Infinispan that uses RocksDB as the backing store:</p>
+
+    <pre><code>@Store
+@SuppressWarnings("unchecked")
+@ConfiguredBy(RocksDbStoreConfigurationV2.class)
+public class RocksDbStoreV2&lt;K, V&gt; implements AdvancedLoadWriteStore&lt;K, V&gt; {
+
+    @Override
+    public void start() {}
+
+    @Override
+    public void stop() {}
+
+    @Override
+    public boolean delete(Object key) {}
+
+    @Override
+    public void write(MarshalledEntry me) {}
+
+    @Override
+    public MarshalledEntry load(Object key) {}
+
+    @Override
+    public void writeBatch(Iterable&lt;MarshalledEntry&lt;? extends K, ? extends V&gt;&gt; marshalledEntries) {}
+
+    @Override
+    public void deleteBatch(Iterable&lt;Object&gt; keys) {}
+}</code></pre>
+
+    <p>This implementation provides the core methods needed for storing and retrieving data from RocksDB.</p>
+
+    <h2>3. Configuring RocksDB Store</h2>
+    <p>The RocksDB store configuration is handled through a dedicated configuration class:</p>
+
+    <pre><code>@ConfigurationFor(RocksDbStoreV2.class)
+@BuiltBy(RocksDbStoreConfigurationBuilderV2.class)
+@SerializedWith(RocksDbStoreConfigurationSerializerV2.class)
+public class RocksDbStoreConfigurationV2 extends AbstractStoreConfiguration {
+    final static AttributeDefinition&lt;CompressionType&gt; COMPRESSION_TYPE =
+        AttributeDefinition.builder("compression-type", CompressionType.NONE)
+            .immutable()
+            .autoPersist(false)
+            .build();
+
+    final static AttributeDefinition&lt;Integer&gt; BLOCK_SIZE =
+        AttributeDefinition.builder("block-size", 0)
+            .immutable()
+            .build();
+}</code></pre>
+
+    <h2>4. Setting Up Infinispan Cache Manager</h2>
+    <p>The cache manager setup involves defining the basic configuration and cache defaults:</p>
+
+    <pre><code>DefaultCacheManager cacheMgr = new DefaultCacheManager(globalCfgBuilder.build());
+
+cacheMgr.defineConfiguration(
+    CacheConfig.RECOVERY_INFO_CACHE_NAME,
+    new ConfigurationBuilder()
+        .clustering()
+        .cacheMode(CacheMode.LOCAL)
+        .build()
+);</code></pre>
+
+    <h2>5. Lucene Integration</h2>
+    <p>The Lucene integration is configured with specific indexing properties:</p>
+
+    <pre><code>indexingBuilder
+    .addProperty("lucene_version", "LUCENE_CURRENT")
+    .addProperty("default.indexBase", DeploymentPath.getIndexDir(false) + File.separator + name)
+    .addProperty("default.directory_provider", FSExtDirectoryProvider.class.getName())
+    .addProperty("default.indexmanager", NRTExtIndexManager.class.getName())
+    .addProperty("default.indexwriter.index_flush_interval", String.valueOf(baseConfig.getInt("index.flush.interval")))
+    .addProperty("default.indexwriter.ram_buffer_size",
+        String.valueOf(Math.max(1, configValue.getLong("storage.indexBufferSize") / (1024 * 1024))))
+    .addProperty("default.worker.execution", "sync")
+    .addProperty("default.reader.strategy", "shared");</code></pre>
+
+    <div class="note">
+        <h3>Key Lucene Configuration Properties</h3>
+        <ul>
+            <li><strong>default.indexwriter.index_flush_interval:</strong> Controls how often the index changes are flushed to disk. Lower values provide better durability but might impact performance.</li>
+            <li><strong>default.indexwriter.ram_buffer_size:</strong> Determines the amount of RAM that may be used for buffering added documents before they are written to disk. Here it's calculated from the storage.indexBufferSize configuration (default 16MB).</li>
+            <li><strong>default.worker.execution:</strong> Set to "sync" for synchronous execution of indexing operations, ensuring immediate consistency but potentially impacting performance.</li>
+        </ul>
+    </div>
+
+    <h2>6. Memory and Transaction Configuration</h2>
+    <p>The final step involves configuring memory management and transaction settings:</p>
+
+    <pre><code>Configuration template = indexingBuilder
+    .memory()
+    .storageType(StorageType.BINARY)
+    .evictionType(EvictionType.valueOf(configValue.getString("eviction.type")))
+    .evictionStrategy(EvictionStrategy.REMOVE)
+    .size(configValue.getLong("eviction.size"))
+    .locking()
+    .isolationLevel(IsolationLevel.REPEATABLE_READ)
+    .transaction()
+    .lockingMode(LockingMode.OPTIMISTIC)
+    .transactionMode(TransactionMode.TRANSACTIONAL)
+    .build();
+
+    # Create Cache
+    cacheMgr.defineConfiguration(name, template);
+    cache = cacheMgr.getCache(name);
+
+    </code></pre>
+
+    <h2>References</h2>
+    <ul>
+        <li><a href="https://infinispan.org/docs/stable/titles/configuring/configuring.html#rocksdb_cache_store">RocksDB Cache Store Documentation</a></li>
+        <li><a href="https://infinispan.org/docs/stable/titles/configuring/configuring.html">Infinispan Configuration Guide</a></li>
+    </ul>
+
+    <h2>Conclusion</h2>
+    <p>This integration provides a powerful combination of Infinispan's caching capabilities, RocksDB's storage efficiency, and Lucene's search capabilities. The configuration options allow for fine-tuned performance and reliability based on specific use cases and requirements.</p>
+
+    <p>For production deployments, it's recommended to:</p>
+    <ul>
+        <li>Carefully tune the Lucene indexing parameters based on your workload</li>
+        <li>Monitor RocksDB performance metrics</li>
+        <li>Adjust cache eviction settings based on memory availability</li>
+        <li>Implement proper backup strategies for both cache and index data</li>
+    </ul>
+</body>
+</html>

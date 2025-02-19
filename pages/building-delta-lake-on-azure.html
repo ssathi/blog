@@ -1,2 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building a Delta Lake with Azure Synapse Analytics</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #0078d4;
+            border-bottom: 2px solid #0078d4;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #0078d4;
+            margin-top: 30px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .img-caption {
+            font-style: italic;
+            text-align: center;
+            margin-bottom: 25px;
+            color: #666;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+        }
+        .note {
+            background-color: #f0f7ff;
+            border-left: 4px solid #0078d4;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .step {
+            background-color: #f8f8f8;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .step-number {
+            display: inline-block;
+            background-color: #0078d4;
+            color: white;
+            width: 30px;
+            height: 30px;
+            text-align: center;
+            line-height: 30px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Building a Delta Lake with Azure Synapse Analytics: A Comprehensive Guide</h1>
 
+    <p>In today's data-driven world, organizations need efficient ways to handle large volumes of data while ensuring data integrity and enabling fast analytics. Delta Lake, an open-source storage layer, provides ACID transactions, scalable metadata handling, and time travel capabilities on top of existing data lakes. This blog post walks through creating a Delta Lake implementation using Azure Synapse Analytics.</p>
 
+    <div class="note">
+        <strong>What you'll learn:</strong> How to set up a complete data pipeline in Azure Synapse Analytics that ingests CSV files, converts them to Parquet format, and creates a Delta Lake by removing duplicates.
+    </div>
+
+    <h2>What is Delta Lake?</h2>
+    <p>Delta Lake is an open-source storage layer that brings reliability to data lakes. Delta Lake provides ACID transactions, scalable metadata handling, and unifies streaming and batch data processing. Delta Lake runs on top of your existing data lake and is compatible with Apache Spark APIs.</p>
+
+    <h2>Architecture Overview</h2>
+    <p>Our implementation follows this data flow:</p>
+    <ol>
+        <li>Ingest CSV files from a source location</li>
+        <li>Convert these files to Parquet format (columnar storage)</li>
+        <li>Create a Delta Lake structure while handling duplicates</li>
+        <li>Make the data available through external tables</li>
+    </ol>
+
+    <h2>Step-by-Step Implementation</h2>
+
+    <div class="step">
+        <h3><span class="step-number">1</span> Set Up Storage Account Structure</h3>
+        <p>First, we establish our storage foundation with proper folder organization:</p>
+        <ul>
+            <li><strong>Input folder</strong>: Contains the raw CSV files to be processed</li>
+            <li><strong>Output folder</strong>: Where the processed Delta Lake files will be stored</li>
+        </ul>
+        <p>This organization helps maintain a clean separation between raw data and processed data.</p>
+    </div>
+
+    <div class="step">
+        <h3><span class="step-number">2</span> Create Synapse Workspace</h3>
+        <p>Azure Synapse Analytics provides an integrated environment for our data processing needs:</p>
+        <img src="../assets/images/azure-synapse-delta-lake/image1.png" alt="Microsoft Azure Synapse Analytics workspace">
+        <div class="img-caption">Azure Synapse Analytics workspace with the arogyaanalytics workspace</div>
+        <p>The workspace serves as the central hub where we'll design and orchestrate our data flows and pipelines.</p>
+    </div>
+
+    <div class="step">
+        <h3><span class="step-number">3</span> Develop Data Flow</h3>
+        <p>In the Synapse Studio, we create a data flow to define our data transformation logic:</p>
+        <img src="../assets/images/azure-synapse-delta-lake/image2.png" alt="Data flow in Synapse Studio showing source, transformation, and sink">
+        <div class="img-caption">Data flow in Synapse Studio showing source1, AlterRow1, and sink1 components</div>
+
+        <p>The data flow consists of these key components:</p>
+        <ul>
+            <li><strong>Source</strong>: Connects to our input data from CSV files</li>
+            <li><strong>AlterRow</strong>: Handles data quality rules including duplicate removal</li>
+            <li><strong>Sink</strong>: Writes the transformed data in Delta format</li>
+        </ul>
+
+        <h4>Source Configuration</h4>
+        <img src="../assets/images/azure-synapse-delta-lake/image1.png" alt="Source configuration settings in data flow">
+        <div class="img-caption">Source configuration showing connection to the workspace default storage</div>
+
+        <p>The source is configured to read from our input folder, using wildcards to capture all relevant files. As shown in the screenshot, we're importing data from the arogyaanalytics-WorkspaceDefaultStorage location.</p>
+
+        <h4>Mapping Configuration</h4>
+        <img src="../assets/images/azure-synapse-delta-lake/image3.png" alt="Mapping configuration in data flow">
+        <div class="img-caption">Mapping tab showing schema mapping between source and destination</div>
+
+        <p>Here we define how our input columns map to the target schema, ensuring data types are correctly aligned.</p>
+    </div>
+
+    <div class="step">
+        <h3><span class="step-number">4</span> Configure Sink for Delta Lake</h3>
+        <img src="../assets/images/azure-synapse-delta-lake/image4.png" alt="Sink configuration for Delta Lake">
+        <div class="img-caption">Sink configuration showing Delta format settings</div>
+
+        <p>The sink configuration is crucial for proper Delta Lake implementation:</p>
+        <ul>
+            <li><strong>Sink Dataset</strong>: appointmentparquet - pointing to our output location</li>
+            <li><strong>Copy Behavior</strong>: Set to "Flatten hierarchy" to maintain a clean Delta structure</li>
+            <li><strong>Optimize Write</strong>: Enabled for better performance</li>
+        </ul>
+
+        <p>This configuration ensures our data is written in the proper Delta format with optimized performance characteristics.</p>
+    </div>
+
+    <div class="step">
+        <h3><span class="step-number">5</span> Set Up Pipeline for Orchestration</h3>
+        <img src="../assets/images/azure-synapse-delta-lake/image5.png" alt="Pipeline configuration in Synapse">
+        <div class="img-caption">Pipeline configuration showing the integration of our data flow</div>
+
+        <p>The pipeline orchestrates the execution of our data flow:</p>
+        <ul>
+            <li>Pipeline name: "appointment" pipeline</li>
+            <li>Contains a Data Flow activity that executes our transformation logic</li>
+            <li>Can be triggered manually or scheduled</li>
+        </ul>
+
+        <p>This pipeline provides the execution context for our data processing logic, bringing the components together into a cohesive workflow.</p>
+    </div>
+
+    <div class="step">
+        <h3><span class="step-number">6</span> Create External Table for Analytics</h3>
+        <p>To make our Delta Lake data accessible for analytics, we create an external table:</p>
+        <ol>
+            <li>Navigate to the Data section in Synapse Studio</li>
+            <li>Select Linked Data, then our output folder</li>
+            <li>Use the "Create External Table" option to define a SQL interface to our Delta data</li>
+        </ol>
+
+        <p>This step exposes our Delta Lake through SQL interfaces, enabling analytics queries against the processed data.</p>
+    </div>
+
+    <div class="step">
+        <h3><span class="step-number">7</span> Set Up Proper Access Controls</h3>
+        <p>For security and governance, we create a specific user and assign them to the Azure Data Lake Storage Gen2 access control group.</p>
+        <p>This ensures that only authorized personnel can access and work with our Delta Lake data.</p>
+    </div>
+
+    <h2>How It Works: The Complete Data Pipeline</h2>
+
+    <p>Let's summarize how our pipeline processes data end-to-end:</p>
+
+    <h3>1. Ingestion of CSV Files</h3>
+    <p>The pipeline begins by reading CSV files from the designated input folder in our storage account. These files contain the raw appointment/session data with timestamps.</p>
+
+    <h3>2. Conversion to Parquet Format</h3>
+    <p>As part of the data flow processing, the CSV data is converted to Parquet format. This conversion brings several advantages:</p>
+    <ul>
+        <li>Columnar storage for better compression and faster queries</li>
+        <li>Schema enforcement for data consistency</li>
+        <li>Improved performance for analytical workloads</li>
+    </ul>
+
+    <h3>3. Delta Lake Creation</h3>
+    <p>The most critical step transforms the Parquet data into a proper Delta Lake by:</p>
+    <ul>
+        <li>Removing duplicates through the AlterRow transformation</li>
+        <li>Writing the data in Delta format with transaction logs</li>
+        <li>Organizing the storage for efficient querying</li>
+    </ul>
+
+    <p>The resulting Delta Lake provides these key benefits:</p>
+    <ul>
+        <li><strong>ACID Transactions</strong>: Ensuring data consistency even with concurrent operations</li>
+        <li><strong>Time Travel</strong>: Ability to query data as it existed at previous points in time</li>
+        <li><strong>Schema Evolution</strong>: Flexibility to adapt to changing data structures</li>
+        <li><strong>Data Quality</strong>: Enforced through constraints and transformations in our data flow</li>
+    </ul>
+
+    <h2>Conclusion</h2>
+    <p>By implementing a Delta Lake in Azure Synapse Analytics, we've created a robust solution for data storage and processing that combines the scalability of data lakes with the reliability of traditional databases.</p>
+
+    <p>This implementation provides a foundation for advanced analytics, supporting both batch and streaming workloads with consistent performance and data integrity.</p>
+
+    <div class="note">
+        <strong>Key Takeaways:</strong>
+        <ul>
+            <li>Delta Lake provides ACID transactions on top of your data lake storage</li>
+            <li>Azure Synapse Analytics offers integrated tools for building end-to-end data pipelines</li>
+            <li>The combination of CSV ingestion, Parquet conversion, and Delta Lake creation offers both performance and flexibility</li>
+            <li>Proper access controls ensure data security throughout the process</li>
+        </ul>
+    </div>
+
+    <p>Ready to implement your own Delta Lake solution? Follow the steps outlined in this guide to get started with your Azure Synapse Analytics environment today.</p>
+</body>
+</html>

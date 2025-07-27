@@ -105,6 +105,11 @@
         <li>Consider 1-year or 3-year reservation to optimize costs.</li>
     </ul>
 
+    <div class="architecture-diagram">
+        <img src="../assets/images/redshift-migration/redshift-dashboard.png" alt="Redshift Serverless Dashboard" width="90%">
+        <p><em>Redshift Serverless Dashboard</em></p>
+    </div>
+
     <h3>2. Create Database and Tables</h3>
 
     <pre><code>CREATE TABLE dev.public.transaction_items (
@@ -141,6 +146,11 @@ FORMAT AS CSV
 DELIMITER '|' 
 IGNOREHEADER 1 
 REGION AS 'ap-southeast-1';</code></pre>
+
+    <div class="architecture-diagram">
+        <img src="../assets/images/redshift-migration/import-csv-to-redshift-table.png" alt="Redshift Serverless Dashboard" width="90%">
+        <p><em>Redshift Serverless Dashboard</em></p>
+    </div>
 
     <h3>5. Debug Data Load Issues</h3>
 

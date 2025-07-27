@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Migration from SnappyData to Amazon Redshift Serverless</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .architecture-diagram {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .callout {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-left: 4px solid #4a86e8;
+            margin: 20px 0;
+        }
+        .problem-callout {
+            background-color: #fff1f0;
+            padding: 15px;
+            border-left: 4px solid #e74c3c;
+            margin: 20px 0;
+        }
+        .solution-callout {
+            background-color: #f1faf1;
+            padding: 15px;
+            border-left: 4px solid #27ae60;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Migration from SnappyData/Spark to Amazon Redshift Serverless</h1>
+
+    <div class="callout">
+        In this post, I’ll walk through how we replaced our legacy SnappyData (a Spark-based analytics platform) with Amazon Redshift Serverless and integrated it with Metabase for smooth, SQL-friendly analytics.
+    </div>
+
+    <h2>🚨 Why We Migrated</h2>
+
+    <div class="problem-callout">
+        <ul>
+            <li><strong>SnappyData is no longer maintained</strong> – Open source community has faded out.</li>
+            <li><strong>Limited SQL Support</strong> – Spark SQL didn’t support full ANSI SQL, causing difficulty for users.</li>
+            <li><strong>Manual cluster management</strong> – High operational overhead and memory issues.</li>
+        </ul>
+    </div>
+
+    <h2>✅ Why Amazon Redshift Serverless</h2>
+
+    <div class="solution-callout">
+        <ul>
+            <li>Fully managed and serverless.</li>
+            <li>Supports full ANSI SQL.</li>
+            <li>Scales with usage – cost control via RPU adjustments.</li>
+            <li>Easy to connect with tools like Metabase.</li>
+        </ul>
+    </div>
+
+    <h2>🔧 Step-by-Step Setup</h2>
+
+    <h3>1. Create Redshift Serverless</h3>
+    <ul>
+        <li>Enable public access.</li>
+        <li>Add appropriate inbound rule in VPC security group.</li>
+        <li>Change default <code>base capacity</code> from 128 RPU (costly) to <strong>4 RPU</strong>.</li>
+        <li>Consider 1-year or 3-year reservation to optimize costs.</li>
+    </ul>
+
+    <h3>2. Create Database and Tables</h3>
+
+    <pre><code>CREATE TABLE dev.public.transaction_items (
+    id VARCHAR NOT NULL,
+    system VARCHAR NOT NULL,
+    transactionId VARCHAR NOT NULL,
+    itemDescription VARCHAR(2500),
+    itemChargingType VARCHAR,
+    itemAmount DECIMAL(16,2),
+    patientGender VARCHAR,
+    patientDateOfBirth DATE,
+    patientLanguage VARCHAR,
+    patientMobileContactNumber VARCHAR
+);</code></pre>
+
+    <h3>3. Clean CSV Files</h3>
+
+    <div class="callout">
+        Redshift doesn't support <code>:</code> for milliseconds in timestamps. Format needs to be <code>HH:MM:SS.sss</code>.
+    </div>
+
+    <pre><code># Fix broken quoted delimiters
+sed -E 's/"([|]|\s*$)/\1/g' transaction_items.csv &gt; transaction_items_cleaned.csv
+
+# Fix timestamp format
+sed -E 's/([0-9]{2}:[0-9]{2}:[0-9]{2}):([0-9]{3})/\1.\2/g' transaction_items-1753471509266.csv &gt; transaction_items.csv</code></pre>
+
+    <h3>4. Load Data from S3</h3>
+
+    <pre><code>COPY dev.public.transaction_items 
+FROM 's3://arogya-analytics/transactions-items/transaction_items_cleaned3.csv'
+IAM_ROLE 'arn:aws:iam::143489828581:role/service-role/AmazonRedshift-CommandsAccessRole-20250726T052415'
+FORMAT AS CSV 
+DELIMITER '|' 
+IGNOREHEADER 1 
+REGION AS 'ap-southeast-1';</code></pre>
+
+    <h3>5. Debug Data Load Issues</h3>
+
+    <pre><code>SELECT *
+FROM sys_load_error_detail
+ORDER BY start_time DESC;</code></pre>
+
+    <h3>6. Deploy Metabase via Docker</h3>
+
+    Visit: <a href="https://www.metabase.com/start/oss/" target="_blank">Metabase OSS</a> to copy Docker command and run the container.
+
+    <h3>7. Connect Metabase to Redshift</h3>
+
+    Use values from Redshift dashboard:
+    <ul>
+        <li>Host</li>
+        <li>Port (5439)</li>
+        <li>Database name: <code>dev</code></li>
+        <li>Username / Password</li>
+    </ul>
+
+    <div class="architecture-diagram">
+        <img src="Screenshot 2025-07-27 at 11.56.46 AM.png" alt="Metabase Connection Setup" width="90%">
+        <p><em>Metabase connected to Amazon Redshift</em></p>
+    </div>
+
+    <h2>🎯 Results</h2>
+
+    <ul>
+        <li>Successfully loaded <strong>10.8 million+ rows</strong> into Redshift.</li>
+        <li>Visualized using Metabase SQL editor and dashboards.</li>
+    </ul>
+
+    <div class="architecture-diagram">
+        <img src="Screenshot 2025-07-27 at 11.57.38 AM.png" alt="Query count in Metabase" width="90%">
+        <p><em>Query result showing total count from Redshift</em></p>
+    </div>
+
+    <div class="architecture-diagram">
+        <img src="Screenshot 2025-07-27 at 11.58.15 AM.png" alt="Transaction items table preview" width="90%">
+        <p><em>Sample transaction records in Metabase</em></p>
+    </div>
+
+    <h2>📌 Summary</h2>
+
+    <div class="solution-callout">
+        Migrating from SnappyData to Amazon Redshift Serverless significantly improved query flexibility, reduced infrastructure management, and empowered our users with Metabase visual analytics.
+    </div>
+
+</body>
+</html>
